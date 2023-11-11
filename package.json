@@ -1,0 +1,23 @@
+{
+  "name": "Rashcorp_tgbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "archiver": "^6.0.1",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
+    "fs-extra": "^11.1.1",
+    "node-telegram-bot-api": "^0.64.0",
+    "telegraf": "^4.15.0",
+    "xlsx": "^0.18.5"
+  }
+}
