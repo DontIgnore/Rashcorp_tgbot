@@ -1,6 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const fs = require('@cyclic.sh/s3fs')(S3_BUCKET_NAME)
+const fs = require('@cyclic.sh/s3fs')(process.env.S3_BUCKET_NAME)
 const AdmZip = require('adm-zip');
 const xlsx = require("xlsx");
 const ExcelJS = require('exceljs');
