@@ -1,6 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const fs = require('fs-extra');
+const fs = require('@cyclic.sh/s3fs')(S3_BUCKET_NAME)
 const AdmZip = require('adm-zip');
 const xlsx = require("xlsx");
 const ExcelJS = require('exceljs');
@@ -326,7 +326,7 @@ bot.on('document', async (msg) => {
                     bot.sendDocument(chatId, fs.createReadStream(`${extractFolderPath}/manifest.xlsx`))
                         .then(() => {
                             console.log('Excel file sent successfully');
-                            fs.removeSync(extractFolderPath);
+                            fs.rmSync(extractFolderPath);
                         })
                         .catch((error) => {
                             console.error('Error sending Excel file:', error);
@@ -348,7 +348,7 @@ bot.on('document', async (msg) => {
             bot.sendMessage(chatId, 'An error occurred while processing your zip file.');
         } finally {
             // Clean up temporary files after processing is complete.
-            fs.removeSync(zipFilePath);
+            fs.rmSync(zipFilePath);
         }
     }
 });
