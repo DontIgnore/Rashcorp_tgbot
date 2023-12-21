@@ -31,7 +31,6 @@ const checkDuplicatedDeclaration = async (declarations) => {
                 console.log('11');
                 duplicated.push({ declaration: declarations[i].declarationName, file: declarations[i].fileName });
                 duplicated.push({ declaration: declarations[j].declarationName, file: declarations[j].fileName });
-                duplicatedObj[declarations[]]
             }
         }
     }
