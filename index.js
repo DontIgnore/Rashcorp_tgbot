@@ -1,9 +1,11 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const fs = require('@cyclic.sh/s3fs')(process.env.S3_BUCKET_NAME)
+const fs = require('fs-extra');
 const AdmZip = require('adm-zip');
 const xlsx = require("xlsx");
 const ExcelJS = require('exceljs');
+const AWS = require("aws-sdk");
+const s3 = new AWS.S3()
 require('dotenv').config();
 
 // Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your own token obtained from BotFather.
@@ -19,31 +21,71 @@ const collectErrors = (error, sheet) => {
     collectedErrors.push({ error: error, declaration: sheet });
 }
 
-const checkDuplicatedDeclaration = (declarations) => {
+const checkDuplicatedDeclaration = async (declarations) => {
     let duplicated = [];
+    let duplicatedObj = {};
+    let errorString = "";
     for (let i = 0; i < declarations.length; i++) {
         for (let j = i + 1; j < declarations.length; j++) {
-            if (declarations[i] == declarations[j]) {
-                duplicated.push(declarations[i])
-                console.log('what?');
+            if (declarations[i].declarationName == declarations[j].declarationName) {
+                console.log('11');
+                duplicated.push({ declaration: declarations[i].declarationName, file: declarations[i].fileName });
+                duplicated.push({ declaration: declarations[j].declarationName, file: declarations[j].fileName });
+                duplicatedObj[declarations[]]
             }
         }
     }
-    return duplicated
+    duplicated.forEach((dup) => { errorString += `${dup.declaration} - ${dup.file}\n` });
+    console.log(errorString);
+    return errorString;
 }
 
 const buildErrorsString = (errors) => {
     let errorString = '';
-    
+
     for (const error of errors) {
         errorString += `${error.declaration}: ${error.error}\n`;
     }
-    
+
     if (errorString.length >= 1000) {
-        errorString = errorString.slice(0, 1000);
+        errorString = errorString;
     }
-    
+
     return errorString.length > 0 ? errorString : 'Ошибок не обнаружено';
+}
+
+function extractDateOfBirth(pnfl, declID) {
+    if (pnfl !== undefined) {
+        const day = pnfl.substr(1, 2);
+        const month = pnfl.substr(3, 2);
+        const year = pnfl.substr(5, 2);
+
+        const currentYear = new Date().getFullYear();
+        const prefix = currentYear - (currentYear % 100) + parseInt(year, 10) > currentYear ? "19" : "20";
+        const fullYear = prefix + year;
+
+        return `${day}.${month}.${fullYear}`;
+    }
+}
+function checkBirthdate(birthdate) {
+    const dateRegex = /^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$/;
+
+    if (!dateRegex.test(birthdate)) {
+        return false;
+    }
+
+    const [day, month, year] = birthdate.split(".");
+    const parsedDate = new Date(`${year}-${month}-${day}`);
+
+    if (
+        parsedDate.getDate() != parseInt(day) ||
+        parsedDate.getMonth() + 1 != parseInt(month) ||
+        parsedDate.getFullYear() != parseInt(year)
+    ) {
+        return false;
+    }
+
+    return true;
 }
 
 const transformAndValidateDeclarationObject = (offsetObject, declaration, sheet) => {
@@ -77,9 +119,13 @@ const transformAndValidateDeclarationObject = (offsetObject, declaration, sheet)
             collectErrors(`ПНФЛ не указан`, offsetObject.declID.w)
             ifError = true
         }
-        if (offsetObject.pnfl?.w.replace(/\D/g, "").trim().replaceAll(" ", "").length !== 14) {
-            console.log(offsetObject.pnfl);
+        const pnflLength = offsetObject.pnfl?.w.replace(/\D/g, "").trim().replaceAll(" ", "").length;
+        if (pnflLength !== 14 && pnflLength != undefined) {
             collectErrors(`ПНФЛ состоит не из 14 цифр`, offsetObject.declID.w)
+            ifError = true
+        }
+        if (!checkBirthdate(extractDateOfBirth(offsetObject.pnfl?.w))) {
+            collectErrors(`Неверная дата рождения`, offsetObject.declID.w)
             ifError = true
         }
         if (!offsetObject.address) {
@@ -91,8 +137,8 @@ const transformAndValidateDeclarationObject = (offsetObject, declaration, sheet)
     if (!ifError) {
         object = {
             declID: offsetObject.declID.w.trim(),
-            totalPrice: offsetObject.totalPrice.w.replace(/\D/g, "").trim().replaceAll(" ", "").replace(',', '.'),
-            totalWeight: offsetObject.totalWeight.w.replace(/\D/g, "").trim().replaceAll(" ", "").replace(',', '.'),
+            totalPrice: +offsetObject.totalPrice.w.replace(/[^\d.,]/g, "").trim().replaceAll(" ", "").replace(',', '.'),
+            totalWeight: +offsetObject.totalWeight.w.replace(/[^\d.,]/g, "").trim().replaceAll(" ", "").replace(',', '.'),
             lastName: offsetObject.lastName.w.trim().replace(/ +(?= )/g, ''),
             firstName: offsetObject.firstName.w.trim().replace(/ +(?= )/g, ''),
             passport: offsetObject.passport.w.trim().replaceAll(" ", ""),
@@ -131,7 +177,7 @@ const validateDeclarationItems = (start, end, declaration, sheet) => {
         }
 
         if (!quantityExists || quantityExists?.w == 0) {
-            if (itemExists) {
+            if (itemExists && itemExists?.w.replaceAll(' ', '').length != 0) {
                 collectErrors(`Название указано, но нет количества`, declaration['A1'].w);
             }
             if (costExists) {
@@ -140,7 +186,7 @@ const validateDeclarationItems = (start, end, declaration, sheet) => {
         }
 
         if (!costExists || +costExists?.w == 0) {
-            if (itemExists) {
+            if (itemExists && itemExists?.w.replaceAll(' ', '').length != 0) {
                 collectErrors(`Название указано, но нет цены`, declaration['A1'].w);
             }
             if (quantityExists) {
@@ -258,7 +304,8 @@ bot.on('document', async (msg) => {
                 if (workbook.Sheets["Sheet1"] != undefined) {
                     var worksheet = [workbook.Sheets["Sheet1"]];
                 } else {
-                    console.log(sheet)
+                    collectErrors(`Не удалось найти лист "Sheet1"`, sheet);
+                    return
                 }
 
                 worksheet.forEach((declaration) => {
@@ -278,7 +325,7 @@ bot.on('document', async (msg) => {
                         }, declaration, sheet)
                     offset.items = validateDeclarationItems(4, 23, declaration, sheet)
                     declarations.push(offset)
-                    collectedDeclarations.push({declarationName: offset.declID, fileName: sheet})
+                    collectedDeclarations.push({ declarationName: offset.declID, fileName: sheet })
                 })
 
             });
@@ -314,10 +361,34 @@ bot.on('document', async (msg) => {
                 if (declarations.length - 1 == i) lastIter = i;
             }
 
-            let duplicated = checkDuplicatedDeclaration(collectedDeclarations)
+            let duplicated = await checkDuplicatedDeclaration(collectedDeclarations)
             if (duplicated.length > 0) {
-                bot.sendMessage(chatId, `Обнаружены дубликаты: ${duplicated.join(', ')}`);
+                bot.sendMessage(chatId, `Обнаружены дубликаты:\n${duplicated}`);
             }
+
+            const row = worksheetEJS.getRow(lastIter + 9);
+
+            row.getCell(9).font = { size: '18', bold: true };
+            row.commit();
+            row.getCell(9).alignment = { vertical: 'middle', horizontal: 'right' };
+            row.commit();
+            row.getCell(9).value = 'Жами:';
+            row.getCell(10).value = { formula: 'SUM(J8:J' + (lastIter + 8) + ')' };
+            row.getCell(11).value = { formula: 'SUM(K8:K' + (lastIter + 8) + ')' };
+            row.getCell(12).value = 'USD';
+            row.commit();
+
+            worksheetEJS.mergeCells(`I${lastIter + 16}:L${lastIter + 16}`);
+            worksheetEJS.mergeCells(`I${lastIter + 13}:L${lastIter + 13}`);
+
+
+            worksheetEJS.getCell(`I${lastIter + 13}`).font = { size: '16', bold: true };
+            worksheetEJS.getCell(`I${lastIter + 13}`).alignment = { vertical: 'middle', horizontal: 'left' };
+            worksheetEJS.getCell(`I${lastIter + 16}`).font = { size: '16', bold: true };
+            worksheetEJS.getCell(`I${lastIter + 16}`).alignment = { vertical: 'middle', horizontal: 'left' };
+
+            worksheetEJS.getCell(`I${lastIter + 13}`).value = 'Қабул қилувчи ташкилот номи, имзоси ва муҳри:';
+            worksheetEJS.getCell(`I${lastIter + 16}`).value = 'Жўнатувчи ташкилот номи, имзоси ва муҳри:';
 
 
             workbookEJS.xlsx.writeFile(`${extractFolderPath}/manifest.xlsx`)
@@ -326,7 +397,7 @@ bot.on('document', async (msg) => {
                     bot.sendDocument(chatId, fs.createReadStream(`${extractFolderPath}/manifest.xlsx`))
                         .then(() => {
                             console.log('Excel file sent successfully');
-                            fs.rmSync(extractFolderPath);
+                            fs.removeSync(extractFolderPath);
                         })
                         .catch((error) => {
                             console.error('Error sending Excel file:', error);
@@ -348,7 +419,7 @@ bot.on('document', async (msg) => {
             bot.sendMessage(chatId, 'An error occurred while processing your zip file.');
         } finally {
             // Clean up temporary files after processing is complete.
-            fs.rmSync(zipFilePath);
+            fs.removeSync(zipFilePath);
         }
     }
 });
