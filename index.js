@@ -4,11 +4,10 @@ const fs = require('fs-extra');
 const AdmZip = require('adm-zip');
 const xlsx = require("xlsx");
 const ExcelJS = require('exceljs');
-const AWS = require("aws-sdk");
-const s3 = new AWS.S3()
+// const AWS = require("aws-sdk");
+// const s3 = new AWS.S3()
 require('dotenv').config();
 
-// Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your own token obtained from BotFather.
 const botToken = process.env.botToken;
 
 let collectedErrors = [];
@@ -16,6 +15,7 @@ let collectedDeclarations = [];
 
 // Create a new instance of TelegramBot.
 const bot = new TelegramBot(botToken, { polling: true });
+console.log(bot);
 
 const collectErrors = (error, sheet) => {
     collectedErrors.push({ error: error, declaration: sheet });
@@ -26,16 +26,8 @@ const checkDuplicatedDeclaration = async (declarations) => {
     let duplicatedObj = {};
     let errorString = "";
     for (let i = 0; i < declarations.length; i++) {
-        for (let j = i + 1; j < declarations.length; j++) {
-            if (declarations[i].declarationName == declarations[j].declarationName) {
-                console.log('11');
-                duplicated.push({ declaration: declarations[i].declarationName, file: declarations[i].fileName });
-                duplicated.push({ declaration: declarations[j].declarationName, file: declarations[j].fileName });
-            }
-        }
+        console.log(declarations[i]);
     }
-    duplicated.forEach((dup) => { errorString += `${dup.declaration} - ${dup.file}\n` });
-    console.log(errorString);
     return errorString;
 }
 
@@ -90,6 +82,7 @@ function checkBirthdate(birthdate) {
 const transformAndValidateDeclarationObject = (offsetObject, declaration, sheet) => {
     let ifError = false;
     let object = {};
+    // console.log(offsetObject.declID.w);
     if (!offsetObject.declID) {
         collectErrors(`Номер декларации не указан`, sheet)
         ifError = true
@@ -150,7 +143,7 @@ const transformAndValidateDeclarationObject = (offsetObject, declaration, sheet)
                 : "946136755",
         }
     }
-
+    // if (sheet == `JFK1213814.xls`) console.log(object.declID, sheet, declaration);
     return object;
 }
 
@@ -193,11 +186,6 @@ const validateDeclarationItems = (start, end, declaration, sheet) => {
             }
         }
 
-
-
-
-
-
         let itemName = declaration[`G${i}`]?.w.trim().replace(',', '.');
         let itemQuantity = Math.round(parseFloat(declaration[`I${i}`]?.w.trim().replace(',', '.').replace(/[^0-9.]/g, "")));
         let itemCost = declaration[`J${i}`]?.w.trim().replace(',', '.').replace(/[^0-9.]/g, "");
@@ -211,17 +199,16 @@ const validateDeclarationItems = (start, end, declaration, sheet) => {
         }
     }
 
-
-
     return itemArray;
 };
 
 // Handle incoming documents/files.
 bot.on('document', async (msg) => {
+    console.clear();
+    console.log('Starting analysis...');
     collectedErrors = [];
     collectedDeclarations = [];
 
-    console.log(msg);
     if (msg.chat.id == 101965789 && msg.document.mime_type == 'application/zip') {
         const chatId = msg.chat.id;
         let waitMsg = bot.sendMessage(chatId, 'Пожалуйста, подождите...', { reply_to_message_id: msg.message_id });
@@ -326,7 +313,6 @@ bot.on('document', async (msg) => {
                     declarations.push(offset)
                     collectedDeclarations.push({ declarationName: offset.declID, fileName: sheet })
                 })
-
             });
 
             for (let i = 0; i < declarations.length; i++) {
@@ -359,11 +345,11 @@ bot.on('document', async (msg) => {
                 row.commit();
                 if (declarations.length - 1 == i) lastIter = i;
             }
-
-            let duplicated = await checkDuplicatedDeclaration(collectedDeclarations)
-            if (duplicated.length > 0) {
-                bot.sendMessage(chatId, `Обнаружены дубликаты:\n${duplicated}`);
-            }
+            let duplicated = await checkDuplicatedDeclaration(collectedDeclarations);
+            // console.log(duplicated);
+            // if (duplicated.length > 0) {
+            // bot.sendMessage(chatId, `Обнаружены дубликаты:\n${duplicated}`);
+            // }
 
             const row = worksheetEJS.getRow(lastIter + 9);
 
