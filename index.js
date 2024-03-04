@@ -38,8 +38,8 @@ const buildErrorsString = (errors) => {
         errorString += `${error.declaration}: ${error.error}\n`;
     }
 
-    if (errorString.length >= 1000) {
-        errorString = errorString;
+    if (errorString.length >= 4096) {
+        errorString = errorString.substring(0, 4096);
     }
 
     return errorString.length > 0 ? errorString : 'Ошибок не обнаружено';
