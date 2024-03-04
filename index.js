@@ -4,8 +4,6 @@ const fs = require('fs-extra');
 const AdmZip = require('adm-zip');
 const xlsx = require("xlsx");
 const ExcelJS = require('exceljs');
-// const AWS = require("aws-sdk");
-// const s3 = new AWS.S3()
 require('dotenv').config();
 
 const botToken = process.env.botToken;
@@ -13,7 +11,6 @@ const botToken = process.env.botToken;
 let collectedErrors = [];
 let collectedDeclarations = [];
 
-// Create a new instance of TelegramBot.
 const bot = new TelegramBot(botToken, { polling: true });
 console.log(bot);
 
@@ -345,7 +342,7 @@ bot.on('document', async (msg) => {
                 row.commit();
                 if (declarations.length - 1 == i) lastIter = i;
             }
-            let duplicated = await checkDuplicatedDeclaration(collectedDeclarations);
+            // let duplicated = await checkDuplicatedDeclaration(collectedDeclarations);
             // console.log(duplicated);
             // if (duplicated.length > 0) {
             // bot.sendMessage(chatId, `Обнаружены дубликаты:\n${duplicated}`);
