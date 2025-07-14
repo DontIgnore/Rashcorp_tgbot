@@ -60,3 +60,13 @@ typings/
 
 # next.js build output
 .next
+
+# рабочие файлы
+user_data/**
+*.zip
+*.xls
+*.xlsx
+bot_log.txt
+# системные
+node_modules/
+.env
