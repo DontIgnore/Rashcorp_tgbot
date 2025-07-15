@@ -65,7 +65,6 @@ typings/
 user_data/**
 *.zip
 *.xls
-*.xlsx
 bot_log.txt
 # системные
 node_modules/
