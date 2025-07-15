@@ -13,7 +13,7 @@ const fs = require("fs-extra");
 const AdmZip = require("adm-zip");
 const xlsx = require("xlsx");
 const ExcelJS = require("exceljs");
-const database = require("./database.js");
+// const database = require("./database.js");
 require("dotenv").config();
 
 // '-644679029',
@@ -541,10 +541,10 @@ bot.on("callback_query", async (query) => {
                     senderPhone: offset.senderPhone,
                   },
                 };
-                await database.addDeclarationToFlight(
-                  countryName,
-                  dataForLimits[offset.pnfl]
-                );
+                // await database.addDeclarationToFlight(
+                //   countryName,
+                //   dataForLimits[offset.pnfl]
+                // );
                 // console.log(dataForLimits);
                 declarations.push(offset);
                 collectedDeclarations.push({
