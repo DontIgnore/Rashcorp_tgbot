@@ -34,6 +34,9 @@ let documentMessage;
 
 const bot = new TelegramBot(botToken, { polling: true });
 console.log("Bot started");
+setInterval(() => {
+  console.log("сервер работает");
+}, 30000);
 
 const collectErrors = (error, sheet) => {
   collectedErrors.push({ error: error, declaration: sheet });
