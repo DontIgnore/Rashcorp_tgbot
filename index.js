@@ -1,4 +1,9 @@
 const https = require("https");
+const express = require("express");
+const app = express();
+const port = process.env.PORT || 3000;
+app.get("/", (_, res) => res.send("Bot is running"));
+app.listen(port, () => console.log(`Web server listening on ${port}`));
 
 
 
@@ -18,7 +23,7 @@ let chatIdNames = {
   "-644679029": "Америка",
 };
 
-const botToken = process.env.botToken;
+const botToken = process.env.BOT_TOKEN || process.env.botToken;
 
 let collectedErrors = [];
 let collectedDeclarations = [];
