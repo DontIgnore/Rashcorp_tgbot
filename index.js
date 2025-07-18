@@ -426,12 +426,13 @@ bot.on("callback_query", async (query) => {
 
           zipFilePath = `${tempFolderPath}/${currentDocument.file_name}`;
 
-          response.data.pipe(fs.createWriteStream(zipFilePath));
+          const writer = fs.createWriteStream(zipFilePath);
+          response.data.pipe(writer);
 
-          // Wait for the download to complete
+          // Wait until the file is completely written to disk
           await new Promise((resolve, reject) => {
-            response.data.on("end", resolve);
-            response.data.on("error", reject);
+            writer.on("finish", resolve);
+            writer.on("error", reject);
           });
 
           // Unzip the downloaded file.
