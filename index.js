@@ -34,9 +34,149 @@ let documentMessage;
 
 const bot = new TelegramBot(botToken, { polling: true });
 console.log("Bot started");
-setInterval(() => {
-  console.log("сервер работает");
-}, 30000);
+
+// Хранилище для сессионных данных пользователей
+const userSessions = new Map();
+
+// Состояния пользователей для пошагового ввода
+const userStates = new Map();
+
+// Обработчик команды проверки PNFL
+bot.onText(/\/check_pnfl/, async (msg) => {
+  const chatId = msg.chat.id;
+  
+  // Сбрасываем состояние пользователя
+  userStates.set(chatId, { step: 'waiting_csrf' });
+  
+  await bot.sendMessage(chatId, 
+    "📋 Для проверки PNFL выполните следующие шаги:\n\n" +
+    "1. Откройте https://cargo.customs.uz в браузере\n" +
+    "2. Войдите в систему через E-IMZO\n" +
+    "3. Откройте консоль браузера (F12 → Console)\n" +
+    "4. Вставьте и выполните скрипт (отправлю следующим сообщением)\n" +
+    "5. Выполните любой запрос на сайте\n" +
+    "6. Скопируйте x-csrf-token из консоли и отправьте мне"
+  );
+  
+  // Отправляем скрипт для консоли
+  const scriptContent = await fs.readFile('./console-script.js', 'utf8');
+  await bot.sendMessage(chatId, `\`\`\`javascript\n${scriptContent}\n\`\`\``, { parse_mode: 'Markdown' });
+});
+
+// Обработчик текстовых сообщений для пошагового ввода
+bot.on('message', async (msg) => {
+  if (msg.document || msg.text?.startsWith('/')) return; // Пропускаем документы и команды
+  
+  const chatId = msg.chat.id;
+  const userState = userStates.get(chatId);
+  
+  if (!userState) return; // Пользователь не в процессе настройки
+  
+  if (userState.step === 'waiting_csrf') {
+    // Ожидаем x-csrf-token
+    const csrfToken = msg.text.trim();
+    
+    if (csrfToken.length > 10) { // Простая валидация
+      userState.csrfToken = csrfToken;
+      userState.step = 'waiting_session';
+      userStates.set(chatId, userState);
+      
+      await bot.sendMessage(chatId, 
+        "✅ x-csrf-token получен!\n\n" +
+        "Теперь скопируйте SESSION из браузера:\n" +
+        "1. Откройте DevTools (F12)\n" +
+        "2. Перейдите в Application → Cookies\n" +
+        "3. Найдите cookie с именем 'SESSION'\n" +
+        "4. Скопируйте его значение и отправьте мне"
+      );
+    } else {
+      await bot.sendMessage(chatId, "❌ Неверный формат x-csrf-token. Попробуйте еще раз.");
+    }
+    
+  } else if (userState.step === 'waiting_session') {
+    // Ожидаем SESSION
+    const session = msg.text.trim();
+    
+    if (session.length > 10) { // Простая валидация
+      // Сохраняем полные данные сессии
+      const sessionData = {
+        csrfToken: userState.csrfToken,
+        session: session
+      };
+      
+      userSessions.set(chatId, sessionData);
+      userStates.delete(chatId); // Очищаем состояние
+      
+      await bot.sendMessage(chatId, 
+        "✅ Данные сессии сохранены!\n\n" +
+        "Теперь отправьте XML файл с декларациями для проверки PNFL."
+      );
+    } else {
+      await bot.sendMessage(chatId, "❌ Неверный формат SESSION. Попробуйте еще раз.");
+    }
+  }
+});
+
+// Функция проверки PNFL через API
+async function checkPNFL(pnfl, sessionData) {
+  try {
+    const response = await axios({
+      method: 'POST',
+      url: 'https://cargo.customs.uz/personDate/datedocv4',
+      headers: {
+        'accept': '*/*',
+        'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'x-csrf-token': sessionData.csrfToken,
+        'x-requested-with': 'XMLHttpRequest',
+        'cookie': `SESSION=${sessionData.session}`,
+        'referer': 'https://cargo.customs.uz/'
+      },
+      data: `document=${pnfl}`,
+      httpsAgent: new https.Agent({ rejectUnauthorized: false })
+    });
+    
+    console.log(`Проверка PNFL ${pnfl}:`, response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Ошибка проверки PNFL ${pnfl}:`, error.message);
+    return { result: 0, error: error.message };
+  }
+}
+
+// Функция парсинга XML и извлечения PNFL
+function parseXMLForPNFL(xmlContent) {
+  const xml2js = require('xml2js');
+  const parser = new xml2js.Parser();
+  
+  return new Promise((resolve, reject) => {
+    parser.parseString(xmlContent, (err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      
+      const declarations = [];
+      
+      if (result.main_data && result.main_data.Declaration) {
+        const decls = Array.isArray(result.main_data.Declaration) 
+          ? result.main_data.Declaration 
+          : [result.main_data.Declaration];
+          
+        for (const decl of decls) {
+          if (decl.pnfl && decl.pnfl[0] && decl.ident_num && decl.ident_num[0]) {
+            declarations.push({
+              pnfl: decl.pnfl[0],
+              ident_num: decl.ident_num[0]
+            });
+          }
+        }
+      }
+      
+      resolve(declarations);
+    });
+  });
+}
 
 const collectErrors = (error, sheet) => {
   collectedErrors.push({ error: error, declaration: sheet });
@@ -284,8 +424,108 @@ const validateDeclarationItems = async (start, end, declaration, sheet) => {
   return itemArray;
 };
 
-// Обработка документов/файлов
+// Обработка XML документов для проверки PNFL
 bot.on("document", async (msg) => {
+  if (msg.document && msg.document.file_name.endsWith(".xml")) {
+    const chatId = msg.chat.id;
+    
+    // Проверяем, есть ли сессионные данные для пользователя
+    if (!userSessions.has(chatId)) {
+      await bot.sendMessage(chatId, 
+        "❌ Сначала выполните команду /check_pnfl и предоставьте данные сессии."
+      );
+      return;
+    }
+    
+    try {
+      // Скачиваем XML файл
+      const fileData = await bot.getFile(msg.document.file_id);
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.file_path}`;
+      
+      const response = await axios({
+        method: 'GET',
+        url: fileUrl,
+        responseType: 'text'
+      });
+      
+      const xmlContent = response.data;
+      
+      // Парсим XML и извлекаем PNFL
+      const declarations = await parseXMLForPNFL(xmlContent);
+      
+      if (declarations.length === 0) {
+        await bot.sendMessage(chatId, "❌ В XML файле не найдено деклараций с PNFL.");
+        return;
+      }
+      
+      await bot.sendMessage(chatId, 
+        `📋 Найдено ${declarations.length} деклараций. Начинаю проверку PNFL...`
+      );
+      
+      const sessionData = userSessions.get(chatId);
+      const errors = [];
+      
+      // Проверяем PNFL пачками по 10 штук
+      for (let i = 0; i < declarations.length; i += 10) {
+        const batch = declarations.slice(i, i + 10);
+        
+        await bot.sendMessage(chatId, 
+          `🔍 Проверяю ${i + 1}-${Math.min(i + 10, declarations.length)}/${declarations.length} PNFL`
+        );
+        
+        const promises = batch.map(({ pnfl, ident_num }) => {
+          return checkPNFL(pnfl, sessionData).then(result => {
+            if (result.result !== 1) {
+              errors.push({
+                ident_num,
+                pnfl,
+                error: result.error || 'Неуспешная проверка'
+              });
+            }
+            return result;
+          });
+        });
+        
+        await Promise.all(promises);
+        
+        // Небольшая задержка между пачками
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Отправляем результат
+      if (errors.length === 0) {
+        await bot.sendMessage(chatId, "✅ Все PNFL прошли проверку успешно!");
+      } else {
+        let errorMessage = `❌ Найдено ${errors.length} ошибок:\n\n`;
+        
+        for (const error of errors) {
+          errorMessage += `🔸 ${error.ident_num}\n`;
+          errorMessage += `   PNFL: ${error.pnfl}\n`;
+          errorMessage += `   Ошибка: ${error.error}\n\n`;
+        }
+        
+        // Разбиваем длинные сообщения
+        if (errorMessage.length > 4000) {
+          const chunks = errorMessage.match(/[\s\S]{1,4000}/g);
+          for (const chunk of chunks) {
+            await bot.sendMessage(chatId, chunk);
+          }
+        } else {
+          await bot.sendMessage(chatId, errorMessage);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Ошибка обработки XML:', error);
+      await bot.sendMessage(chatId, 
+        `❌ Ошибка обработки XML файла: ${error.message}`
+      );
+    }
+    
+    return;
+  }
+  
+  // Обработка ZIP файлов (существующий код)
   if (msg.document && msg.document.file_name.endsWith(".zip")) {
     currentChatId = msg.chat.id; // Сохраняем ID чата
     currentDocument = msg.document; // Сохраняем документ
@@ -562,12 +802,6 @@ bot.on("callback_query", async (query) => {
           for (let i = 0; i < declarations.length; i++) {
             let row = worksheetEJS.getRow(i + 8);
 
-            // row.style.border = {
-            // 	top: { style: 'thin', color: { argb: '00000000' } },
-            // 	left: { style: 'thin', color: { argb: '00000000' } },
-            // 	bottom: { style: 'thin', color: { argb: '00000000' } },
-            // 	right: { style: 'thin', color: { argb: '00000000' } },
-            // };
             let itemsArray = [];
             declarations[i].items.forEach((item) => {
               itemsArray.push(`${item.itemName}: ${item.itemQuantity}`);
@@ -858,32 +1092,46 @@ bot.on("callback_query", async (query) => {
   if (query.data === "check_errors") {
     bot.deleteMessage(chatId, messageId);
 
+    // Проверяем, есть ли сессионные данные для пользователя
+    if (!userSessions.has(chatId)) {
+      // Запускаем процесс получения сессионных данных
+      userStates.set(chatId, { step: 'waiting_csrf' });
+      
+      await bot.sendMessage(chatId, 
+        "📋 Для проверки PNFL выполните следующие шаги:\n\n" +
+        "1. Откройте https://cargo.customs.uz в браузере\n" +
+        "2. Войдите в систему через E-IMZO\n" +
+        "3. Откройте консоль браузера (F12 → Console)\n" +
+        "4. Вставьте и выполните скрипт (отправлю следующим сообщением)\n" +
+        "5. Выполните любой запрос на сайте\n" +
+        "6. Скопируйте x-csrf-token из консоли и отправьте мне"
+      );
+      
+      // Отправляем скрипт для консоли
+      const scriptContent = await fs.readFile('./console-script.js', 'utf8');
+      await bot.sendMessage(chatId, `\`\`\`javascript\n${scriptContent}\n\`\`\``, { parse_mode: 'Markdown' });
+      
+      return;
+    }
+
     try {
-      await logToFile("Начало обработки запроса check_errors");
+      await bot.sendMessage(chatId, "🔍 Начинаю проверку PNFL из загруженного архива...");
+      
       const fileData = await bot.getFile(currentDocument.file_id);
-      await logToFile(`Получен файл: ${fileData.file_path}`);
-
       const zipFileUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.file_path}`;
-      await logToFile(`URL архива: ${zipFileUrl}`);
 
-      await logToFile("Скачивание архива...");
       const response = await axios({
         method: "GET",
         url: zipFileUrl,
         responseType: "stream",
       });
-      await logToFile("Архив успешно скачан");
 
       const tempFolderPath = `${__dirname}/tmp`;
-      await logToFile(`Создание временной папки: ${tempFolderPath}`);
-
       if (!fs.existsSync(tempFolderPath)) {
         fs.mkdirSync(tempFolderPath);
-        await logToFile("Временная папка создана");
       }
 
       const zipFilePath = `${tempFolderPath}/${fileData.file_id}.zip`;
-      await logToFile(`Путь к архиву: ${zipFilePath}`);
       const writeStream = fs.createWriteStream(zipFilePath);
 
       await new Promise((resolve, reject) => {
@@ -891,30 +1139,11 @@ bot.on("callback_query", async (query) => {
         writeStream.on("error", reject);
         response.data.pipe(writeStream);
       });
-      await logToFile("Архив сохранен на диск");
 
       const zip = new AdmZip(zipFilePath);
       const zipEntries = zip.getEntries();
-      await logToFile(`Найдено файлов в архиве: ${zipEntries.length}`);
 
-      let sessionId;
-
-      try {
-        await logToFile("Чтение JSESSIONID из файла...");
-        const jsessionid = fs.readFileSync("jsession.txt", "utf8");
-        sessionId = `JSESSIONID=${jsessionid}`;
-        await logToFile("JSESSIONID успешно прочитан");
-      } catch (error) {
-        await logToFile(
-          `Ошибка при чтении JSESSIONID: ${error.message}`,
-          "error"
-        );
-        throw new Error(
-          "Не удалось прочитать JSESSIONID. Возможно, нужно перелогиниться."
-        );
-      }
-
-      // Подготавливаем файлы для пакетной обработки
+      // Извлекаем PNFL из Excel файлов
       const excelFiles = zipEntries
         .filter((entry) => entry.entryName.match(/\.(xls|xlsx)$/i))
         .map((entry) => ({
@@ -922,26 +1151,106 @@ bot.on("callback_query", async (query) => {
           content: zip.readFile(entry),
         }));
 
-      await logToFile(`Найдено Excel файлов: ${excelFiles.length}`);
+      await bot.sendMessage(chatId, `📊 Найдено Excel файлов: ${excelFiles.length}`);
 
-      // Обрабатываем файлы асинхронно
-      const batchResults = await processBatchFiles(
-        excelFiles,
-        sessionId,
-        chatId
-      );
-      await logToFile(
-        `Обработка всех файлов завершена. Всего результатов: ${batchResults.length}`
-      );
+      // Извлекаем все PNFL и ident_num из Excel файлов
+      const allPNFLs = [];
+      
+      for (const file of excelFiles) {
+        try {
+          const workbook = xlsx.read(file.content, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          
+          // PNFL находится в ячейке E12
+          const pnflCell = worksheet['E12'];
+          // ident_num находится в ячейке A1 (предполагаем)
+          const identCell = worksheet['A1'];
+          
+          if (pnflCell && pnflCell.v) {
+            const pnflValue = pnflCell.v.toString().trim();
+            // Проверяем, что это похоже на PNFL (14 цифр)
+            if (/^\d{14}$/.test(pnflValue)) {
+              const identNum = identCell && identCell.v ? identCell.v.toString().trim() : file.name;
+              
+              allPNFLs.push({
+                pnfl: pnflValue,
+                ident_num: identNum,
+                fileName: file.name
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Ошибка обработки файла ${file.name}:`, error.message);
+        }
+      }
+
+      if (allPNFLs.length === 0) {
+        await bot.sendMessage(chatId, "❌ В Excel файлах не найдено PNFL для проверки.");
+        fs.unlinkSync(zipFilePath);
+        return;
+      }
+
+      await bot.sendMessage(chatId, `📋 Найдено ${allPNFLs.length} PNFL для проверки. Начинаю проверку...`);
+
+      const sessionData = userSessions.get(chatId);
+      const errors = [];
+
+      // Проверяем PNFL пачками по 10 штук
+      for (let i = 0; i < allPNFLs.length; i += 10) {
+        const batch = allPNFLs.slice(i, i + 10);
+        
+        await bot.sendMessage(chatId, 
+          `🔍 Проверяю ${i + 1}-${Math.min(i + 10, allPNFLs.length)}/${allPNFLs.length} PNFL`
+        );
+        
+        const promises = batch.map(({ pnfl, ident_num, fileName }) => {
+          return checkPNFL(pnfl, sessionData).then(result => {
+            if (result.result !== 1) {
+              errors.push({
+                ident_num,
+                fileName,
+                pnfl,
+                error: result.error || 'Неуспешная проверка'
+              });
+            }
+            return result;
+          });
+        });
+        
+        await Promise.all(promises);
+        
+        // Небольшая задержка между пачками
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // Отправляем результат
+      if (errors.length === 0) {
+        await bot.sendMessage(chatId, "✅ Все PNFL прошли проверку успешно!");
+      } else {
+        let errorMessage = `❌ Найдено ${errors.length} ошибок:\n\n`;
+        
+        for (const error of errors) {
+          errorMessage += `🔸 ${error.ident_num}\n`;
+        }
+        
+        // Разбиваем длинные сообщения
+        if (errorMessage.length > 4000) {
+          const chunks = errorMessage.match(/[\s\S]{1,4000}/g);
+          for (const chunk of chunks) {
+            await bot.sendMessage(chatId, chunk);
+          }
+        } else {
+          await bot.sendMessage(chatId, errorMessage);
+        }
+      }
 
       fs.unlinkSync(zipFilePath);
-      await logToFile("Временные файлы удалены");
     } catch (error) {
       console.error(error);
-      await logToFile(`Критическая ошибка: ${error.message}`, "error");
       bot.sendMessage(
         chatId,
-        `Произошла ошибка при обработке ZIP файла: ${error.message}`
+        `Произошла ошибка при проверке PNFL: ${error.message}`
       );
     }
   }
