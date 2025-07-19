@@ -15,7 +15,7 @@ async function handleCheckPnfl(bot, msg) {
   if (!global.userStates) global.userStates = new Map();
   global.userStates.set(chatId, { step: 'waiting_csrf', action: 'check_pnfl' });
   
-  await bot.sendMessage(chatId, config.messages.checkPnfl.instructions);
+  // await bot.sendMessage(chatId, config.messages.checkPnfl.instructions);
   
   // Отправляем скрипт для консоли
   const fs = require('fs-extra');
