@@ -24,7 +24,7 @@ async function checkPNFL(pnfl, sessionData) {
       httpsAgent: new https.Agent({ rejectUnauthorized: false })
     });
     
-    console.log(`Проверка PNFL ${pnfl}:`, response.data);
+    // console.log(`Проверка PNFL ${pnfl}:`, response.data);
     return response.data;
   } catch (error) {
     console.error(`Ошибка проверки PNFL ${pnfl}:`, error.message);

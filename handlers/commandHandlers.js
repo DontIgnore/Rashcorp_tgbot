@@ -165,10 +165,7 @@ async function handleXmlDocument(bot, msg) {
       // Обновляем сообщение о прогрессе
       try {
         const updatedProgressMessage = createProgressMessage(processedCount, declarations.length, startTime);
-        await bot.editMessageText(updatedProgressMessage, {
-          chat_id: chatId,
-          message_id: progressMessageId
-        });
+        await safeEditMessage(bot, chatId, progressMessageId, updatedProgressMessage);
       } catch (editError) {
         // Если не удалось обновить сообщение, отправляем новое
         console.log('Не удалось обновить сообщение о прогрессе, отправляем новое');
@@ -264,10 +261,7 @@ async function startPnflCheck(bot, chatId, sessionData) {
       // Обновляем сообщение о прогрессе
       try {
         const updatedProgressMessage = createProgressMessage(processedCount, allPNFLs.length, startTime);
-        await bot.editMessageText(updatedProgressMessage, {
-          chat_id: chatId,
-          message_id: progressMessageId
-        });
+        await safeEditMessage(bot, chatId, progressMessageId, updatedProgressMessage);
       } catch (editError) {
         // Если не удалось обновить сообщение, отправляем новое
         console.log('Не удалось обновить сообщение о прогрессе, отправляем новое');
@@ -304,6 +298,31 @@ async function startPnflCheck(bot, chatId, sessionData) {
       chatId,
       `${config.messages.errors.pnflCheck} ${error.message}`
     );
+  }
+}
+
+// Функция безопасного обновления сообщения прогресса
+async function safeEditMessage(bot, chatId, messageId, text) {
+  if (!safeEditMessage.lastEdit) safeEditMessage.lastEdit = 0;
+  const minDelay = 1200; // 1.2 секунды
+  const now = Date.now();
+  if (now - safeEditMessage.lastEdit < minDelay) {
+    await new Promise(res => setTimeout(res, minDelay - (now - safeEditMessage.lastEdit)));
+  }
+  while (true) {
+    try {
+      await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      safeEditMessage.lastEdit = Date.now();
+      break;
+    } catch (err) {
+      if (err.response && err.response.body && err.response.body.error_code === 429) {
+        const retryAfter = err.response.body.parameters?.retry_after || 2;
+        await new Promise(res => setTimeout(res, (retryAfter + 0.5) * 1000));
+      } else {
+        console.error('Ошибка при обновлении прогресса:', err.message);
+        break;
+      }
+    }
   }
 }
 
