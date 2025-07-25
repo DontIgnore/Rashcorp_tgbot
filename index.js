@@ -28,14 +28,6 @@ global.userStates = new Map();
 global.collectedErrors = [];
 global.collectedDeclarations = [];
 
-// Обработчики команд
-bot.onText(/\/check_pnfl/, async (msg) => {
-  if (!config.bot.allowedChatIds.includes(msg.chat.id.toString())) {
-    return;
-  }
-  await handleCheckPnfl(bot, msg);
-});
-
 bot.onText(/\/find (.+)/, async (msg, match) => {
   await handleFind(bot, msg, match);
 });
@@ -76,18 +68,33 @@ bot.on("document", async (msg) => {
     global.documentMessage = msg;
 
     // Отправка сообщения с кнопками
-    const options = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Начать обработку", callback_data: "start_processing" },
-            { text: "Проверить вес", callback_data: "check_weight" },
-            { text: "Отмена", callback_data: "cancel_processing" },
+    let options;
+    if (msg.chat.id === "-4044680201") {
+      options = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Начать обработку", callback_data: "start_processing" },
+              { text: "Проверить вес", callback_data: "check_weight" },
+              { text: "Отмена", callback_data: "cancel_processing" },
+            ],
+            [{ text: "Проверить ошибки", callback_data: "check_errors" }],
           ],
-          [{ text: "Проверить ошибки", callback_data: "check_errors" }],
-        ],
-      },
-    };
+        },
+      };
+    } else {
+      options = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Начать обработку", callback_data: "start_processing" },
+              { text: "Проверить вес", callback_data: "check_weight" },
+              { text: "Отмена", callback_data: "cancel_processing" },
+            ]
+          ],
+        },
+      };
+    }
     await bot.sendMessage(
       global.currentChatId,
       config.messages.fileProcessing.documentReceived,

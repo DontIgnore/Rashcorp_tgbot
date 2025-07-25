@@ -182,7 +182,7 @@ async function handleXmlDocument(bot, msg) {
     if (errors.length === 0) {
       await bot.sendMessage(chatId, config.messages.fileProcessing.allSuccess);
     } else {
-      let errorMessage = `${config.messages.fileProcessing.errorsFound.replace('{count}', errors.length)}:\n\n`;
+      let errorMessage = `${config.messages.fileProcessing.errorsFound.replace('{count}', errors.length)}\n\n`;
       
       for (const error of errors) {
         errorMessage += `🔸 ${error.ident_num}\n`;
@@ -278,7 +278,7 @@ async function startPnflCheck(bot, chatId, sessionData) {
     if (errors.length === 0) {
       await bot.sendMessage(chatId, config.messages.fileProcessing.allSuccess);
     } else {
-      let errorMessage = `${config.messages.fileProcessing.errorsFound.replace('{count}', errors.length)}:\n\n`;
+      let errorMessage = `${config.messages.fileProcessing.errorsFound.replace('{count}', errors.length)}\n\n`;
       
       for (const error of errors) {
         errorMessage += `🔸 ${error.ident_num}\n`;
