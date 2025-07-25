@@ -69,7 +69,7 @@ bot.on("document", async (msg) => {
 
     // Отправка сообщения с кнопками
     let options;
-    if (msg.chat.id === "-4044680201") {
+    if (msg.chat.id == "-4044680201") {
       options = {
         reply_markup: {
           inline_keyboard: [
